@@ -1,8 +1,9 @@
 use "FowlerNollVo"
+use "collections"
 primitive HashingError
-class Fingerprint
-  var _hash : Array[U8]
-  new _create (hash': Array[U8] val) =>
+class val Fingerprint
+  var _hash : Array[U8] val
+  new val _create (hash': Array[U8] val) =>
     _hash = hash'
   fun hash (): U32 =>
     Util.hash(this._hash)
@@ -24,10 +25,10 @@ class Fingerprint
     not eq(that)
 
 actor Fingerprinter
-  be fingerprint[A: FowlerNollVo.PrimeFieldWidths](data: Array[U8], fpSize: Usize, cb:{((Fingerprint | HashError))}) =>
+  be fingerprint[A: PrimeFieldWidths](data: Array[U8] val, fpSize: USize val, cb: {((Fingerprint | HashingError))} val) =>
     try
-      let hash : Array[U8] = recover FowlerNollVo.FNV1a[A](data)?.slice(0, fpSize) end
-      let fp : Fingerprint = Fingerprint._create(hash)
+      let hash : Array[U8] val = recover FNV1a[A](data)?.slice(0, fpSize) end
+      let fp : Fingerprint val = Fingerprint._create(hash)
       cb(fp)
     else
       cb(HashingError)
