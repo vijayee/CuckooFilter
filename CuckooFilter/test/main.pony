@@ -95,12 +95,24 @@ class iso _TestBucket is UnitTest
         | let fps: Array[Fingerprint] =>
           var bucket = Bucket(6)
           try
+            //Test Add
             for i in Range(0, 6) do
               t.assert_true(bucket.add(fps(i)?))
             end
             for i in Range(6, 8) do
               t.assert_false(bucket.add(fps(i)?))
             end
+            // Test Contains
+            for i in Range(0, 6) do
+              t.assert_true(bucket.contains(fps(i)?))
+            end
+            for i in Range(6, 8) do
+              t.assert_false(bucket.contains(fps(i)?))
+            end
+            //Test swap
+            let swapped : Fingerprint = bucket.swap(fps(6)?)?
+            t.assert_true(bucket.contains(fps(6)?))
+            t.assert_false(bucket.contains(swapped))
           else
             t.fail("Data Error")
           end
@@ -108,3 +120,35 @@ class iso _TestBucket is UnitTest
       end
     } val
     let next = NextFp._create(data, cb)
+actor AddNext
+  let t': 
+  new _create(t': TestHelper)
+class iso _TestCuckooFilter is UnitTest
+  var data : Array[Array[U8]] val
+  var fps : Array[Fingerprint] ref
+  var cb : {((Array[Fingerprint] | HashingError))} val
+  var i : USize = 0
+  new _create(data': Array[Array[U8]] val, ,cb': {((Array[Fingerprint] | HashingError))} val) =>
+    cb = cb'
+    data = data'
+    fps = Array[Fingerprint](data.size())
+    try
+      Fingerprinter.fingerprint[U32](data(i = i + 1)?, 4, {(fp: (Fingerprint | HashingError)) (nextFp : NextFp tag = this) => nextFp(fp) })
+    else
+      cb(HashingError)
+    end
+  be apply(fp': (Fingerprint | HashingError)) =>
+    match fp'
+      | HashingError => cb(HashingError)
+      | let fp : Fingerprint =>
+        fps.push(fp)
+        if i < data.size() then
+          try
+            Fingerprinter.fingerprint[U32](data(i = i + 1)?, 4, {(fp: (Fingerprint | HashingError)) (nextFp : NextFp tag = this) => nextFp(fp) })
+          else
+            cb(HashingError)
+          end
+        else
+          cb(fps)
+        end
+    end
