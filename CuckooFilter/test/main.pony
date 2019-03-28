@@ -11,7 +11,7 @@ actor Main is TestList
   fun tag tests(test: PonyTest) =>
     test(_TestFingerprint)
     test(_TestBucket)
-
+    test(_TestCuckooFilter)
 class iso _TestFingerprint is UnitTest
   fun name(): String => "Testing Fingerprint"
   fun apply(t: TestHelper) =>
@@ -43,6 +43,7 @@ class iso _TestFingerprint is UnitTest
       end
     } val
     Fingerprinter.fingerprint[U32](data, 4, cb)
+
 actor NextFp
   var data : Array[Array[U8]] val
   var fps : Array[Fingerprint] ref
@@ -93,7 +94,7 @@ class iso _TestBucket is UnitTest
       match fps'
       | HashingError => t.fail("Data Error")
         | let fps: Array[Fingerprint] =>
-          var bucket = Bucket(6)
+          var bucket = Bucket.create(6)
           try
             //Test Add
             for i in Range(0, 6) do
@@ -120,35 +121,146 @@ class iso _TestBucket is UnitTest
       end
     } val
     let next = NextFp._create(data, cb)
+/*
 actor AddNext
-  let t': 
-  new _create(t': TestHelper)
-class iso _TestCuckooFilter is UnitTest
+  let t: TestHelper
+  var cf iso: CuckooFilter
   var data : Array[Array[U8]] val
-  var fps : Array[Fingerprint] ref
-  var cb : {((Array[Fingerprint] | HashingError))} val
   var i : USize = 0
-  new _create(data': Array[Array[U8]] val, ,cb': {((Array[Fingerprint] | HashingError))} val) =>
-    cb = cb'
+  var cb : {(((None | CuckooFilterAddError), CuckooFilter iso))} val
+  new _create(data': Array[Array[U8]] val , t': TestHelper, cf': CuckooFilter iso, cb': {((None | CuckooFilterAddError))} val) =>
+    t = t
+    cf = cf
     data = data'
-    fps = Array[Fingerprint](data.size())
-    try
-      Fingerprinter.fingerprint[U32](data(i = i + 1)?, 4, {(fp: (Fingerprint | HashingError)) (nextFp : NextFp tag = this) => nextFp(fp) })
+    cb = cb'
+    if i < data.size() then
+      try
+        cf.add(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterAddError)) (addNext : AddNext tag = this) => addNext(ans) })
+      else
+        cb(CuckooFilterAddError)
+      end
     else
-      cb(HashingError)
+      cb(None)
     end
-  be apply(fp': (Fingerprint | HashingError)) =>
-    match fp'
-      | HashingError => cb(HashingError)
-      | let fp : Fingerprint =>
-        fps.push(fp)
+  be apply(ans': (Boolean | CuckooFilterAddError)) =>
+    match ans'
+      | CuckooFilterAddError => cb(HashingError)
+      | let ans: Boolean =>
         if i < data.size() then
           try
-            Fingerprinter.fingerprint[U32](data(i = i + 1)?, 4, {(fp: (Fingerprint | HashingError)) (nextFp : NextFp tag = this) => nextFp(fp) })
+            t.assert_true(ans)
+            cf.add(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterAddError)) (addNext : AddNext tag = this) => addNext(ans) })
           else
-            cb(HashingError)
+            let cf: CuckooFilter iso = CuckooFilter
+            cb(CuckooFilterAddError, consume cf)
           end
         else
-          cb(fps)
+          cb(None, consume cf)
         end
     end
+
+actor ContainsNext
+  let t: TestHelper
+  var cf iso: CuckooFilter
+  var data : Array[Array[U8]] val
+  var i : USize = 0
+  var cb : {((None | CuckooFilterContainsError))} val
+  new _create(data': Array[Array[U8]] val , t': TestHelper, cf': CuckooFilter iso, cb': {((None | CuckooFilterAddError))} val) =>
+    t = t
+    cf = cf
+    data = data'
+    cb = cb'
+    if i < data.size() then
+      try
+        cf.contains(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterContainsError)) (addNext : AddNext tag = this) => addNext(ans) })
+      else
+        cb(CuckooFilterContainsError, consume cf)
+      end
+    else
+      cb(None, consume cf)
+    end
+  be apply(ans': (Boolean | CuckooFilterContainsError)) =>
+    match ans'
+      | CuckooFilterContainsError => cb(HashingError)
+      | let ans: Boolean =>
+        if i < data.size() then
+          try
+            t.assert_true(ans)
+            cf.contains(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterContainsError)) (addNext : AddNext tag = this) => addNext(ans) })
+          else
+            cb(CuckooFilterContainsError, consume cf)
+          end
+        else
+          cb(None, consume cf)
+        end
+    end
+*/
+class iso _TestCuckooFilter is UnitTest
+  fun name(): String => "Testing CuckooFilter"
+  fun apply(t: TestHelper) =>
+    t.long_test(5000000000)
+
+    let dataCount: USize = 1500
+    let dataSize: USize = 6
+    var data: Array[Array[U8]] val = recover
+      var data': Array[Array[U8]] = []
+      let now = Time.now()
+      var gen = Rand(now._1.u64(), now._2.u64())
+
+      for i in Range(0, dataCount) do
+        var bytes: Array[U8] = Array[U8](6)
+        for j in Range(0, dataSize) do
+          bytes.push(gen.u8())
+        end
+        data'.push(bytes)
+      end
+      data'
+    end
+    var cf: CuckooFilter[U32] = CuckooFilter[U32](dataCount, 6, 4)
+    let cb = {(err' : (None | CuckooFilterAddError)) (t) =>
+      match err'
+        | CuckooFilterAddError => t.fail("Data Error")
+        | None =>
+          t.complete(true)
+      end
+    } val
+
+    var next = object is CuckooFilterAddNextLoop
+      var _t: TestHelper = t
+      var _cf: CuckooFilter[U32] = cf
+      var _data: Array[Array[U8]] val = data
+      var _cb: {((None | CuckooFilterAddError))} val = cb
+      var _i: USize = -1
+      be apply() =>
+        if _i < _data.size() then
+          try
+            _cf.add(_data(_i = _i + 1)?, {(ok: (Bool | CuckooFilterAddError)) (next : CuckooFilterAddNextLoop tag = this) => next.loop(ok) })
+          else
+            _cb(CuckooFilterAddError)
+          end
+        else
+          _cb(None)
+        end
+      be loop (ok': (Bool | CuckooFilterAddError)) =>
+        match ok'
+          | CuckooFilterAddError => cb(CuckooFilterAddError)
+          | let ok: Bool =>
+
+            _t.assert_true(true)
+
+            if not ok then
+              _t.complete(true)
+            end
+
+            if _i < _data.size() then
+              try
+                _cf.add(_data(_i = _i + 1)?, {(ok: (Bool | CuckooFilterAddError)) (next : CuckooFilterAddNextLoop tag = this) => next.loop(ok) })
+              else
+                _cb(CuckooFilterAddError)
+              end
+            else
+              _cb(None)
+            end
+        end
+    end
+    next()
