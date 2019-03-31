@@ -5,7 +5,7 @@ class val Fingerprint
   var _hash : Array[U8] val
   new val _create (hash': Array[U8] val) =>
     _hash = hash'
-  fun hash (): U32 =>
+  fun hash (): USize =>
     Util.hash(this._hash)
   fun box eq (that: box->Fingerprint) : Bool =>
     try

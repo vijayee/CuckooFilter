@@ -73,6 +73,7 @@ actor NextFp
           cb(fps)
         end
     end
+
 class iso _TestBucket is UnitTest
   fun name(): String => "Testing Bucket"
   fun apply(t: TestHelper) =>
@@ -121,87 +122,14 @@ class iso _TestBucket is UnitTest
       end
     } val
     let next = NextFp._create(data, cb)
-/*
-actor AddNext
-  let t: TestHelper
-  var cf iso: CuckooFilter
-  var data : Array[Array[U8]] val
-  var i : USize = 0
-  var cb : {(((None | CuckooFilterAddError), CuckooFilter iso))} val
-  new _create(data': Array[Array[U8]] val , t': TestHelper, cf': CuckooFilter iso, cb': {((None | CuckooFilterAddError))} val) =>
-    t = t
-    cf = cf
-    data = data'
-    cb = cb'
-    if i < data.size() then
-      try
-        cf.add(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterAddError)) (addNext : AddNext tag = this) => addNext(ans) })
-      else
-        cb(CuckooFilterAddError)
-      end
-    else
-      cb(None)
-    end
-  be apply(ans': (Boolean | CuckooFilterAddError)) =>
-    match ans'
-      | CuckooFilterAddError => cb(HashingError)
-      | let ans: Boolean =>
-        if i < data.size() then
-          try
-            t.assert_true(ans)
-            cf.add(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterAddError)) (addNext : AddNext tag = this) => addNext(ans) })
-          else
-            let cf: CuckooFilter iso = CuckooFilter
-            cb(CuckooFilterAddError, consume cf)
-          end
-        else
-          cb(None, consume cf)
-        end
-    end
 
-actor ContainsNext
-  let t: TestHelper
-  var cf iso: CuckooFilter
-  var data : Array[Array[U8]] val
-  var i : USize = 0
-  var cb : {((None | CuckooFilterContainsError))} val
-  new _create(data': Array[Array[U8]] val , t': TestHelper, cf': CuckooFilter iso, cb': {((None | CuckooFilterAddError))} val) =>
-    t = t
-    cf = cf
-    data = data'
-    cb = cb'
-    if i < data.size() then
-      try
-        cf.contains(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterContainsError)) (addNext : AddNext tag = this) => addNext(ans) })
-      else
-        cb(CuckooFilterContainsError, consume cf)
-      end
-    else
-      cb(None, consume cf)
-    end
-  be apply(ans': (Boolean | CuckooFilterContainsError)) =>
-    match ans'
-      | CuckooFilterContainsError => cb(HashingError)
-      | let ans: Boolean =>
-        if i < data.size() then
-          try
-            t.assert_true(ans)
-            cf.contains(data(i = i + 1)?, {(ans: (Boolean | CuckooFilterContainsError)) (addNext : AddNext tag = this) => addNext(ans) })
-          else
-            cb(CuckooFilterContainsError, consume cf)
-          end
-        else
-          cb(None, consume cf)
-        end
-    end
-*/
 class iso _TestCuckooFilter is UnitTest
   fun name(): String => "Testing CuckooFilter"
   fun apply(t: TestHelper) =>
-    t.long_test(5000000000)
+    t.long_test(5000000000000)
 
     let dataCount: USize = 1500
-    let dataSize: USize = 6
+    let dataSize: USize = 34
     var data: Array[Array[U8]] val = recover
       var data': Array[Array[U8]] = []
       let now = Time.now()
@@ -217,50 +145,156 @@ class iso _TestCuckooFilter is UnitTest
       data'
     end
     var cf: CuckooFilter[U32] = CuckooFilter[U32](dataCount, 6, 4)
-    let cb = {(err' : (None | CuckooFilterAddError)) (t) =>
-      match err'
-        | CuckooFilterAddError => t.fail("Data Error")
-        | None =>
-          t.complete(true)
-      end
-    } val
+    let cb = {() (t, cf, data) =>
+      let cb = {() (t, cf, data)  =>
+        let cb = {() (t, cf, data) =>
+          let cb = {() (t) => t.complete(true)} val
+          let next = object is CuckooFilterNextLoop
+            var _t: TestHelper = t
+            var _cf: CuckooFilter[U32] = cf
+            var _data: Array[Array[U8]] val = data
+            var _cb: {()} val = cb
+            var _i: USize = 0
 
-    var next = object is CuckooFilterAddNextLoop
-      var _t: TestHelper = t
-      var _cf: CuckooFilter[U32] = cf
-      var _data: Array[Array[U8]] val = data
-      var _cb: {((None | CuckooFilterAddError))} val = cb
-      var _i: USize = -1
-      be apply() =>
-        if _i < _data.size() then
-          try
-            _cf.add(_data(_i = _i + 1)?, {(ok: (Bool | CuckooFilterAddError)) (next : CuckooFilterAddNextLoop tag = this) => next.loop(ok) })
-          else
-            _cb(CuckooFilterAddError)
+            be apply() =>
+              if _i < _data.size() then
+                try
+                  _cf.contains(_data(_i)?, {(ok: Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+                else
+                  _t.fail("data error")
+                  _t.complete(true)
+                end
+              else
+                _cb()
+              end
+            be loop (ok: Bool) =>
+              _t.assert_false(ok)
+
+              if ok then
+                _t.complete(true)
+              end
+              _i = _i + 1
+              if _i < _data.size() then
+                try
+                  _cf.contains(_data(_i)?, {(ok: (Bool)) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+                else
+                  _t.fail("data error")
+                  _t.complete(true)
+                end
+              else
+                _cb()
+              end
           end
-        else
-          _cb(None)
-        end
-      be loop (ok': (Bool | CuckooFilterAddError)) =>
-        match ok'
-          | CuckooFilterAddError => cb(CuckooFilterAddError)
-          | let ok: Bool =>
+          next()
+        } val
+        let next = object is CuckooFilterNextLoop
+          var _t: TestHelper = t
+          var _cf: CuckooFilter[U32] = cf
+          var _data: Array[Array[U8]] val = data
+          var _cb: {()} val = cb
+          var _i: USize = 0
 
-            _t.assert_true(true)
+          be apply() =>
+            if _i < _data.size() then
+              try
+                _cf.remove(_data(_i)?, {(ok: Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+              else
+                _t.fail("data error")
+                _t.complete(true)
+              end
+            else
+              _cb()
+            end
+          be loop (ok: Bool) =>
+            _t.assert_true(ok)
 
             if not ok then
               _t.complete(true)
             end
-
+            _i = _i + 1
             if _i < _data.size() then
               try
-                _cf.add(_data(_i = _i + 1)?, {(ok: (Bool | CuckooFilterAddError)) (next : CuckooFilterAddNextLoop tag = this) => next.loop(ok) })
+                _cf.remove(_data(_i)?, {(ok) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
               else
-                _cb(CuckooFilterAddError)
+                _t.fail("data error")
+                _t.complete(true)
               end
             else
-              _cb(None)
+              _cb()
             end
+        end
+        next()
+      } val
+      let next = object is CuckooFilterNextLoop
+        var _t: TestHelper = t
+        var _cf: CuckooFilter[U32] = cf
+        var _data: Array[Array[U8]] val = data
+        var _cb: {()} val = cb
+        var _i: USize = 0
+
+        be apply() =>
+          if _i < _data.size() then
+            try
+              _cf.contains(_data(_i)?, {(ok : Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+            else
+              _cb()
+            end
+          else
+            _cb()
+          end
+        be loop (ok: Bool) =>
+          _t.assert_true(ok)
+
+          if not ok then
+            _t.complete(true)
+          end
+          _i = _i + 1
+          if _i < _data.size() then
+            try
+              _cf.contains(_data(_i)?, {(ok: Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+            else
+              _cb()
+            end
+          else
+            _cb()
+          end
+      end
+      next()
+    } val
+
+    let next = object is CuckooFilterNextLoop
+      var _t: TestHelper = t
+      var _cf: CuckooFilter[U32] = cf
+      var _data: Array[Array[U8]] val = data
+      var _cb: {()} val = cb
+      var _i: USize = 0
+      be apply() =>
+        if _i < _data.size() then
+          try
+            _cf.add(_data(_i)?, {(ok: Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+          else
+            _t.fail("data error")
+            _t.complete(true)
+          end
+        else
+          _cb()
+        end
+      be loop (ok: Bool) =>
+        _t.assert_true(ok)
+
+        if not ok then
+          _t.complete(true)
+        end
+        _i = _i + 1
+        if _i < _data.size() then
+          try
+            _cf.add(_data(_i)?, {(ok: Bool) (next : CuckooFilterNextLoop tag = this) => next.loop(ok) })
+          else
+            _t.fail("data error")
+            _t.complete(true)
+          end
+        else
+          _cb()
         end
     end
     next()
